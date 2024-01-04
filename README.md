@@ -10,10 +10,13 @@ Commands:
   enc      Encrypt JWT tokens
   dec      Decrypt JWT tokens
   cert     Generate public and private keys
+  jwk      Generate jwk config from public key
 $ ./jwt cert
 Usage of cert:
   -export
-        Export public and private keys to files (default: export to file)
+        Export public and private keys to files (default: export to file) (default true)
+  -jwks
+        Generate jwks config
   -path string
         Path to the directory where the keys will be exported. (default ".")
 $ ./jwt enc
@@ -32,5 +35,8 @@ Usage of dec:
         Path to the public key file (default "./public_key.pem")
   -token string
         jwt token to be decrypted
-
+$ ./jwt jwk
+Usage of jwk:
+  -path string
+        Path to the public key file (default "./public_key.pem")
 ```

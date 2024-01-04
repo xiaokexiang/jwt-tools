@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"log"
+	"math/big"
+	random "math/rand"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,6 +26,7 @@ const (
 	ENCRYPT = "enc"
 	DECRYPT = "dec"
 	CERT    = "cert"
+	JWK     = "jwk"
 )
 
 func Parse() {
@@ -34,27 +37,31 @@ func Parse() {
 		fmt.Println("  enc      Encrypt JWT tokens")
 		fmt.Println("  dec      Decrypt JWT tokens")
 		fmt.Println("  cert     Generate public and private keys")
+		fmt.Println("  jwk      Generate jwk config from public key")
 	}
 	command := flag.Arg(0)
-	// 解析子参数
+	// ?????
 	subCommand := flag.NewFlagSet(command, flag.ExitOnError)
 	switch command {
+	case JWK:
+		public := subCommand.String("path", "./public_key.pem", "Path to the public key file")
+		_ = subCommand.Parse(flag.Args()[1:])
+		generateJwkFromPublicKey(*public)
 	case CERT:
 		export := subCommand.Bool("export", true, "Export public and private keys to files (default: export to file)")
 		exportPath := subCommand.String("path", ".", "Path to the directory where the keys will be exported.")
 		_ = subCommand.Parse(flag.Args()[1:])
-		privateKey, publicKey, _ := generateRSAKeyPair()
-		if *export {
-			exportToFile(*exportPath, privateKey, publicKey)
-		} else {
-			exportToString(privateKey, publicKey)
-		}
+		generateCert(*export, *exportPath)
 	case ENCRYPT:
 		iss := subCommand.String("iss", "", "Issuer of the JWT")
-		sub := subCommand.String("sub", "test jwk", "Subject of the JWT")
+		sub := subCommand.String("sub", "test jwt", "Subject of the JWT")
 		private := subCommand.String("private", "./private_key.pem", "Path to the private key file")
 		exp := subCommand.Int("exp", 3600, "Expiration time of the JWT in seconds")
 		_ = subCommand.Parse(flag.Args()[1:])
+		if *iss == "" {
+			subCommand.Usage()
+			os.Exit(1)
+		}
 		generateJWTToken(*private, *iss, *sub, time.Duration(*exp)*time.Second)
 	case DECRYPT:
 		token := subCommand.String("token", "", "jwt token to be decrypted")
@@ -71,8 +78,31 @@ func Parse() {
 		fmt.Println("  enc      Encrypt JWT tokens")
 		fmt.Println("  dec      Decrypt JWT tokens")
 		fmt.Println("  cert     Generate public and private keys")
+		fmt.Println("  jwk      Generate jwk config from public key")
 		os.Exit(1)
 	}
+}
+
+func generateJwkFromPublicKey(path string) {
+	pk := loadFile(path, false)
+	publicKey := pk.(*rsa.PublicKey)
+	random.Seed(time.Now().UnixNano())
+	jwkMap := map[string]interface{}{
+		"keys": []map[string]interface{}{
+			{
+				"kty": "RSA",
+				"alg": "RS256",
+				"use": "sig",
+				"n":   base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes()),
+			},
+		},
+	}
+	jwkJson, err := json.MarshalIndent(jwkMap, "", "  ")
+	if err != nil {
+		log.Fatalf("failed to marshal JWKS to JSON: %s\n", err)
+	}
+	log.Println(string(jwkJson))
 }
 
 func loadFile(path string, private bool) any {
@@ -127,6 +157,15 @@ func parseJWTToken(tokenString, publicKeyPath string) {
 	}
 }
 
+func generateCert(export bool, exportPath string) {
+	privateKey, publicKey, _ := generateRSAKeyPair()
+	if export {
+		exportToFile(exportPath, privateKey, publicKey)
+	} else {
+		exportToString(privateKey, publicKey)
+	}
+}
+
 func generateRSAKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -161,13 +200,13 @@ func exportToFile(path string, privateKey *rsa.PrivateKey, publicKey *rsa.Public
 	publicKeyBytes, _ := x509.MarshalPKIXPublicKey(publicKey)
 
 	if err := os.WriteFile(privateKeyPath, pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
+		Type:  "PRIVATE KEY",
 		Bytes: privateKeyBytes,
 	}), 0600); err != nil {
 		log.Fatalf("export to path: %s error: %s\n", privateKeyPath, err)
 	}
 	if err := os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PUBLIC KEY",
+		Type:  "PUBLIC KEY",
 		Bytes: publicKeyBytes,
 	}), 0600); err != nil {
 		log.Fatalf("export to path: %s error: %s\n", publicKeyPath, err)
